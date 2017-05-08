@@ -188,30 +188,31 @@ class Traim
       attributes << name
     end
 
+    def has_many(name)
+    end
+
     def show(&block);    actions["GET"]    = block end
     def create(&block);  actions["POST"]   = block end
     def update(&block);  actions["PUT"]    = block end
     def destory(&block); actions["DELETE"] = block end
 
+    def to_hash(object) 
+      new_hash = attributes.inject({}) do | h, attr|
+        h[attr] = object.attributes[attr.to_s]
+        h
+      end
+    end
 
     def to_json
       if @result.kind_of?(ActiveRecord::Relation)
         hash = @result.map do |r|
-          resource_hash = {id: r.id}.merge r.attributes
-          attributes.inject({}) do | new_hash, attr|
-            new_hash[attr] = resource_hash[attr]
-            new_hash
-          end
+          to_hash(r) 
         end
         JSON.dump(hash)
       else
         new_hash = {}
         if @result.errors.size == 0
-          hash = @result.attributes
-          new_hash = attributes.inject({}) do | h, attr|
-            h[attr] = hash[attr.to_s]
-            h
-          end
+          new_hash = to_hash(@result)
         else
           new_hash = @result.errors.messages
         end
