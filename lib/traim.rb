@@ -32,10 +32,8 @@ class Traim
     yield self 
   end
 
-  def self.routes; @routes ||= {} end
-
   def resources(name, &block)
-    self.class.routes[name] = Resource.new(block) 
+    Router.resources[name] = Resource.new(block) 
   end
 
   def logger; Traim.logger end
@@ -47,14 +45,8 @@ class Traim
     logger.info("#{request.request_method} #{request.path_info} from #{request.ip}")
     logger.debug("Parameters: #{request.params}")
 
-    seg = Seg.new(request.path_info)
-    inbox = {}
-    seg.capture(:segment, inbox)  
-    segment = inbox[:segment].to_sym
-    raise BadRequestError unless resource = routes(segment)
-
-    router = Router.new(resource)
-    router.run(seg)
+    router = Router.new
+    router.run(Seg.new(request.path_info))
     router.render(request)
   rescue Error => e
     logger.error(e) 
@@ -63,10 +55,6 @@ class Traim
     logger.error(e) 
     error = Error.new
     [error.status, error.header, [JSON.dump(error.body)]]
-  end
-
-  def routes(name)
-    self.class.routes[name]
   end
 
   class Error < StandardError
@@ -110,9 +98,16 @@ class Traim
     def not_implemented;       @status = 501 end
     def bad_gateway;           @status = 502 end
 
-    def initialize(resource) 
+    def initialize 
       @status = nil
-      @resource = resource
+      @namespace = nil
+      # @resource = resource
+    end
+
+    def self.resources; @resources ||= {} end
+
+    def resources(name)
+      self.class.resources[name]
     end
 
     def show(&block);    @resource.actions["GET"]    = block end
@@ -125,6 +120,11 @@ class Traim
 
       while seg.capture(:segment, inbox)
         segment = inbox[:segment].to_sym
+
+        if @resource.nil?
+          raise BadRequestError unless @resource = resources(segment)
+          next
+        end 
 
         if @id.nil? && !defined?(@collection_name)
           if collection = @resource.collections[segment]
@@ -266,14 +266,14 @@ class Traim
           raise Error if object.class.reflections[name.to_s].blank?
           nest_associations << name
           object.send(name).map do |association|
-            Traim.routes[name].to_hash(association, nest_associations) 
+            Router.resources[name].to_hash(association, nest_associations) 
           end
         else
           resource_name = name.to_s.pluralize.to_sym
           raise Error.new(message: "Inifinite Association") if nest_associations.include?(resource_name)
           raise Error if object.class.reflections[name.to_s].blank?
           nest_associations << resource_name 
-          Traim.routes[resource_name].to_hash(object.send(name), nest_associations)
+          Router.resources[resource_name].to_hash(object.send(name), nest_associations)
         end
         hash
       end
