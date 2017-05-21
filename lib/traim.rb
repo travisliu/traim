@@ -2,6 +2,7 @@ require 'json'
 require 'rack'
 require 'seg'
 require 'yaml'
+require 'logger'
 require 'active_record'
 
 class Traim 
@@ -17,6 +18,9 @@ class Traim
   def self.application(&block)
     @app = new(&block) 
   end
+
+  def self.logger=(logger); @logger = logger end
+  def self.logger; @logger end
 
   def self.call(env)
     @app.call(env)
@@ -34,12 +38,16 @@ class Traim
     self.class.routes[name] = Resource.new(block) 
   end
 
+  def logger; Traim.logger end
+
   def call(env); dup.call!(env) end
 
   def call!(env)
     request = Rack::Request.new(env)
+    logger.info("#{request.request_method} #{request.path_info} from #{request.ip}")
+    logger.debug("Parameters: #{request.params}")
+
     seg = Seg.new(request.path_info)
-    
     inbox = {}
     seg.capture(:segment, inbox)  
     segment = inbox[:segment].to_sym
@@ -49,8 +57,10 @@ class Traim
     router.run(seg)
     router.render(request)
   rescue Error => e
+    logger.error(e) 
     [e.status, e.header, [JSON.dump(e.body)]]
   rescue Exception => e
+    logger.error(e) 
     error = Error.new
     [error.status, error.header, [JSON.dump(error.body)]]
   end
@@ -88,6 +98,7 @@ class Traim
   class Router
 
     def status; @status || ok end
+    def logger; Traim.logger  end 
 
     # status code sytax suger
     def ok;                    @status = 200 end
