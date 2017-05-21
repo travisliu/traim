@@ -10,20 +10,22 @@ class Traim
   TRAIM_ENV = ENV['TRAIM_ENV'] || 'development'
 
   def initialize(&block)
-    instance_eval(&block)
+    # instance_eval(&block)
+    @app = Application.new
+    @app.compile(&block)
   end
 
   def self.settings; @settings ||= {} end
 
   def self.application(&block)
-    @app = new(&block) 
+    @instance = new(&block) 
   end
 
   def self.logger=(logger); @logger = logger end
   def self.logger; @logger end
 
   def self.call(env)
-    @app.call(env)
+    @instance.dup.call(env)
   end
 
   def self.config(&block)
@@ -32,22 +34,14 @@ class Traim
     yield self 
   end
 
-  def resources(name, &block)
-    Router.resources[name] = Resource.new(block) 
-  end
-
   def logger; Traim.logger end
 
-  def call(env); dup.call!(env) end
-
-  def call!(env)
+  def call(env)
     request = Rack::Request.new(env)
     logger.info("#{request.request_method} #{request.path_info} from #{request.ip}")
     logger.debug("Parameters: #{request.params}")
-
-    router = Router.new
-    router.run(Seg.new(request.path_info))
-    router.render(request)
+    
+    @app.route(request)
   rescue Error => e
     logger.error(e) 
     [e.status, e.header, [JSON.dump(e.body)]]
@@ -55,6 +49,50 @@ class Traim
     logger.error(e) 
     error = Error.new
     [error.status, error.header, [JSON.dump(error.body)]]
+  end
+
+  class Application 
+    def logger; Traim.logger end 
+
+    def initialize(name = :default)
+      @name         = name
+      @resources    = {}
+      @applications = {}
+    end
+
+    def resources(name, &block)
+      @resources[name] = Resource.new(block) 
+    end
+
+    def namespace(name, &block)
+      logger.debug("application namespace #{name}")
+      application(name).compile(&block)
+    end
+
+    def application(name = :default)
+      logger.debug("Lunch application #{name}")
+      app = @applications[name] ||= Application.new(name)
+    end
+
+    def route(request, seg = nil)
+      inbox = {}
+      seg ||= Seg.new(request.path_info) 
+      seg.capture(:segment, inbox)
+      segment = inbox[:segment].to_sym
+
+      if app = @applications[segment]
+        app.route(request, seg)
+      else 
+        router = Router.new(@resources)
+        router.run(seg, inbox)
+        router.render(request)
+      end
+    end
+
+    def compile(&block)
+      logger.debug("Compile application: #{@name}")
+      instance_eval(&block)
+    end
   end
 
   class Error < StandardError
@@ -92,22 +130,16 @@ class Traim
     def ok;                    @status = 200 end
     def created;               @status = 201 end
     def no_cotent;             @status = 204 end
-    def bad_request;           @status = 400 end
-    def not_found;             @status = 404 end
-    def internal_server_error; @status = 500 end
-    def not_implemented;       @status = 501 end
-    def bad_gateway;           @status = 502 end
 
-    def initialize 
+    def initialize(resources) 
       @status = nil
-      @namespace = nil
-      # @resource = resource
+      @resources = resources
     end
 
     def self.resources; @resources ||= {} end
 
     def resources(name)
-      self.class.resources[name]
+      @resources[name]
     end
 
     def show(&block);    @resource.actions["GET"]    = block end
@@ -115,10 +147,8 @@ class Traim
     def update(&block);  @resource.actions["PUT"]    = block end
     def destory(&block); @resource.actions["DELETE"] = block end
 
-    def run(seg)  
-      inbox = {}
-
-      while seg.capture(:segment, inbox)
+    def run(seg, inbox)  
+      begin
         segment = inbox[:segment].to_sym
 
         if @resource.nil?
@@ -145,19 +175,19 @@ class Traim
         end
 
         raise BadRequestError 
-      end
+      end while seg.capture(:segment, inbox) 
     end
     
     def to_json
       if @result.kind_of?(ActiveRecord::Relation)
-        hash = @result.map do |r|
-          @resource.to_hash(r) 
+        hash = @result.map do |object|
+          @resource.to_hash(object, @resources) 
         end
         JSON.dump(hash)
       else
         new_hash = {}
         if @result.errors.size == 0
-          new_hash = @resource.to_hash(@result)
+          new_hash = @resource.to_hash(@result, @resources)
         else
           new_hash = @result.errors.messages
         end
@@ -256,7 +286,7 @@ class Traim
       fields << {name: name, type: 'connection'}
     end
 
-    def to_hash(object, nest_associations = []) 
+    def to_hash(object, resources, nest_associations = []) 
       fields.inject({}) do | hash, attr|
         name = attr[:name]
         hash[name] = if attr[:type] == 'attribute'
@@ -266,14 +296,14 @@ class Traim
           raise Error if object.class.reflections[name.to_s].blank?
           nest_associations << name
           object.send(name).map do |association|
-            Router.resources[name].to_hash(association, nest_associations) 
+            resources[name].to_hash(association, nest_associations) 
           end
         else
           resource_name = name.to_s.pluralize.to_sym
           raise Error.new(message: "Inifinite Association") if nest_associations.include?(resource_name)
           raise Error if object.class.reflections[name.to_s].blank?
           nest_associations << resource_name 
-          Router.resources[resource_name].to_hash(object.send(name), nest_associations)
+          resources[resource_name].to_hash(object.send(name), nest_associations)
         end
         hash
       end
