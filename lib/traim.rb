@@ -31,7 +31,7 @@ class Traim
   def self.routes; @routes ||= {} end
 
   def resources(name, &block)
-    self.class.routes[name] = block 
+    self.class.routes[name] = Resource.new(block) 
   end
 
   def call(env); dup.call!(env) end
@@ -43,39 +43,49 @@ class Traim
     inbox = {}
     seg.capture(:segment, inbox)  
     segment = inbox[:segment].to_sym
-    raise BadRequestError unless block = self.class.routes[segment]
+    raise BadRequestError unless resource = routes(segment)
 
-    resource = Resource.new(&block)
-    resource.run(seg)
-    resource.render(request)
-
-    [resource.status, resource.header, [resource.to_json]]
+    router = Router.new(resource)
+    router.run(seg)
+    router.render(request)
   rescue Error => e
     [e.status, e.header, [JSON.dump(e.body)]]
   rescue Exception => e
-    puts "message: #{e.message}, b: #{e.backtrace}"
     error = Error.new
     [error.status, error.header, [JSON.dump(error.body)]]
   end
 
+  def routes(name)
+    self.class.routes[name]
+  end
+
   class Error < StandardError
+
+    def initialize(options = {})
+      @message = options[:message] || error_message 
+      @body    = options[:body]    || error_message
+      super(@message)
+    end
+
     def status; 500 end
+    def error_message; 'Internal Server Error' end
     def header; DEFAULT_HEADER end
-    def body; {message: 'error'} end
+    def body; {body: @body} end
   end
   class NotImplementedError < Error
+    def error_message; "Not Implemented Error" end
     def status; 501 end
   end
   class BadRequestError < Error
+    def error_message; "Bad Request Error" end
     def status; 400 end
   end
   class NotFoundError < Error
+    def error_message; "Not Found Error" end
     def status; 404 end
   end
-
-  class Resource 
-    attr :header
-    attr :id
+   
+  class Router
 
     def status; @status || ok end
 
@@ -89,6 +99,16 @@ class Traim
     def not_implemented;       @status = 501 end
     def bad_gateway;           @status = 502 end
 
+    def initialize(resource) 
+      @status = nil
+      @resource = resource
+    end
+
+    def show(&block);    @resource.actions["GET"]    = block end
+    def create(&block);  @resource.actions["POST"]   = block end
+    def update(&block);  @resource.actions["PUT"]    = block end
+    def destory(&block); @resource.actions["DELETE"] = block end
+
     def run(seg)  
       inbox = {}
 
@@ -96,18 +116,18 @@ class Traim
         segment = inbox[:segment].to_sym
 
         if @id.nil? && !defined?(@collection_name)
-          if collection = collections[segment]
+          if collection = @resource.collections[segment]
             @collection_name = segment
             return instance_eval(&collection)
           else
             @id = segment
-            resource(model_delegator.show(@id))
+            @record = @resource.model_delegator.show(@id)
             next 
           end
         end
 
         if !defined?(@member_name)
-          if member = members[segment]
+          if member = @resource.members[segment]
             @member_name = segment
             return instance_eval(&member)
           end
@@ -116,20 +136,66 @@ class Traim
         raise BadRequestError 
       end
     end
+    
+    def to_json
+      if @result.kind_of?(ActiveRecord::Relation)
+        hash = @result.map do |r|
+          @resource.to_hash(r) 
+        end
+        JSON.dump(hash)
+      else
+        new_hash = {}
+        if @result.errors.size == 0
+          new_hash = @resource.to_hash(@result)
+        else
+          new_hash = @result.errors.messages
+        end
+        JSON.dump(new_hash)
+      end
+    end
+
+    def action(name)
+      return @resource.actions[name] if @resource.actions[name]
+
+      default_actions if @default_actions.nil?
+      block = @default_actions[name]
+      block
+    end
+
+    def default_actions
+      @default_actions = {} 
+      delegator = @resource.model_delegator
+      @default_actions["POST"] = lambda do |params|
+        delegator.create(params)
+      end
+      @default_actions["GET"] = lambda do |params|
+        delegator.show(@id)
+      end
+      @default_actions["PUT"] = lambda do |params|
+        result = delegator.update(@id, params)
+        result
+      end
+      @default_actions["DELETE"] = lambda do |params|
+        delegator.delete(@id)
+      end
+    end
+
+    def model;  @resource.model end
+    def record; @record; end
 
     def render(request)
-      raise NotImplementedError unless method_block = actions[request.request_method]
+      raise NotImplementedError unless method_block = action(request.request_method)
       @result = execute(request.params, &method_block)
+      [status, '', [to_json]]
     end
 
     def execute(params, &block)
-      @results = yield params
+      yield params
     end
+  end
 
-    def element_type?; !defined?(@results) || !@results.kind_of?(Collection) end 
-
-    def initialize(&block) 
-      @status = nil 
+  class Resource 
+    def initialize(block) 
       instance_eval(&block) 
     end
 
@@ -145,27 +211,10 @@ class Traim
     def actions; @actions ||= {} end
     def action(name, &block)
       action_methods = {create: 'POST', show: 'GET', update: 'PUT', destory: 'DELETE'}
-      default_actions if @default_actions.nil?
-      block = @default_actions[name] unless block_given?
-      actions[action_methods[name]] = block
+      actions[action_methods[name]] = block unless block_given?
+      actions[action_methods[name]]
     end
 
-    def default_actions
-      @default_actions = {} 
-      @default_actions[:create] = lambda do |params|
-        model_delegator.create(params)
-      end
-      @default_actions[:show] = lambda do |params|
-        model_delegator.show(id)
-      end
-      @default_actions[:update] = lambda do |params|
-        result = model_delegator.update(id, params)
-        result
-      end
-      @default_actions[:destory] = lambda do |params|
-        model_delegator.delete(id)
-      end
-    end
     def resource(object = nil)
       @resource = object unless object.nil?
       @resource
@@ -183,43 +232,41 @@ class Traim
       members[name] = block
     end
 
-    def attributes; @attributes ||= [] end
+    def fields; @fields ||= [] end
     def attribute(name)
-      attributes << name
+      fields << {name: name, type: 'attribute'} 
     end
 
     def has_many(name)
+      fields << {name: name, type: 'association'}
     end
 
-    def show(&block);    actions["GET"]    = block end
-    def create(&block);  actions["POST"]   = block end
-    def update(&block);  actions["PUT"]    = block end
-    def destory(&block); actions["DELETE"] = block end
-
-    def to_hash(object) 
-      new_hash = attributes.inject({}) do | h, attr|
-        h[attr] = object.attributes[attr.to_s]
-        h
-      end
+    def has_one(name)
+      fields << {name: name, type: 'connection'}
     end
 
-    def to_json
-      if @result.kind_of?(ActiveRecord::Relation)
-        hash = @result.map do |r|
-          to_hash(r) 
-        end
-        JSON.dump(hash)
-      else
-        new_hash = {}
-        if @result.errors.size == 0
-          new_hash = to_hash(@result)
+    def to_hash(object, nest_associations = []) 
+      fields.inject({}) do | hash, attr|
+        name = attr[:name]
+        hash[name] = if attr[:type] == 'attribute'
+          object.attributes[name.to_s]
+        elsif  attr[:type] == 'association'
+          raise Error if nest_associations.include?(name)
+          raise Error if object.class.reflections[name.to_s].blank?
+          nest_associations << name
+          object.send(name).map do |association|
+            Traim.routes[name].to_hash(association, nest_associations) 
+          end
         else
-          new_hash = @result.errors.messages
+          resource_name = name.to_s.pluralize.to_sym
+          raise Error.new(message: "Inifinite Association") if nest_associations.include?(resource_name)
+          raise Error if object.class.reflections[name.to_s].blank?
+          nest_associations << resource_name 
+          Traim.routes[resource_name].to_hash(object.send(name), nest_associations)
         end
-        JSON.dump(new_hash)
+        hash
       end
     end
-
   end
 
   class Model
