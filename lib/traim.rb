@@ -207,13 +207,13 @@ class Traim
       @default_actions = {} 
       delegator = @resource.model_delegator
       @default_actions["POST"] = lambda do |params|
-        delegator.create(params)
+        delegator.create(params["payload"])
       end
       @default_actions["GET"] = lambda do |params|
-        delegator.show(@id)
+        delegator.show(params["id"])
       end
       @default_actions["PUT"] = lambda do |params|
-        result = delegator.update(@id, params)
+        result = delegator.update(params["id"], params["payload"])
         result
       end
       @default_actions["DELETE"] = lambda do |params|
@@ -226,18 +226,20 @@ class Traim
 
     def render(request)
       raise NotImplementedError unless method_block = action(request.request_method)
-      @result = execute(request.params, &method_block)
+      params = {"payload" => request.params}
+      params["id"] = @id unless @id.nil?
+      @result = @resource.execute(params, &method_block)
       [status, '', [to_json]]
-    end
-
-    def execute(params, &block)
-      yield params
     end
   end
 
   class Resource 
     def initialize(block) 
       instance_eval(&block) 
+    end
+
+    def execute(params, &block)
+      yield params
     end
 
     def model(object = nil, options = {})
@@ -255,6 +257,8 @@ class Traim
       actions[action_methods[name]] = block unless block_given?
       actions[action_methods[name]]
     end
+
+    def logger; Traim.logger  end 
 
     def resource(object = nil)
       @resource = object unless object.nil?
@@ -274,8 +278,8 @@ class Traim
     end
 
     def fields; @fields ||= [] end
-    def attribute(name)
-      fields << {name: name, type: 'attribute'} 
+    def attribute(name, &block)
+      fields << {name: name, type: 'attribute', block: block} 
     end
 
     def has_many(name)
@@ -290,7 +294,11 @@ class Traim
       fields.inject({}) do | hash, attr|
         name = attr[:name]
         hash[name] = if attr[:type] == 'attribute'
-          object.attributes[name.to_s]
+          if attr[:block].nil?
+            object.attributes[name.to_s]
+          else
+            execute(object, &attr[:block])
+          end
         elsif  attr[:type] == 'association'
           raise Error if nest_associations.include?(name)
           raise Error if object.class.reflections[name.to_s].blank?
