@@ -10,7 +10,6 @@ class Traim
   TRAIM_ENV = ENV['TRAIM_ENV'] || 'development'
 
   def initialize(&block)
-    # instance_eval(&block)
     @app = Application.new
     @app.compile(&block)
   end
@@ -106,7 +105,7 @@ class Traim
     def status; 500 end
     def error_message; 'Internal Server Error' end
     def header; DEFAULT_HEADER end
-    def body; {body: @body} end
+    def body; {message: @body} end
   end
   class NotImplementedError < Error
     def error_message; "Not Implemented Error" end
@@ -127,9 +126,9 @@ class Traim
     def logger; Traim.logger  end 
 
     # status code sytax suger
-    def ok;                    @status = 200 end
-    def created;               @status = 201 end
-    def no_cotent;             @status = 204 end
+    def ok;        @status = 200 end
+    def created;   @status = 201 end
+    def no_cotent; @status = 204 end
 
     def initialize(resources) 
       @status = nil
@@ -142,10 +141,10 @@ class Traim
       @resources[name]
     end
 
-    def show(&block);    @resource.actions["GET"]    = block end
-    def create(&block);  @resource.actions["POST"]   = block end
-    def update(&block);  @resource.actions["PUT"]    = block end
-    def destory(&block); @resource.actions["DELETE"] = block end
+    def show(&block);    @resource.action(:show,    &block) end
+    def create(&block);  @resource.action(:create,  &block) end
+    def update(&block);  @resource.action(:update,  &block) end
+    def destory(&block); @resource.action(:destory, &block) end
 
     def run(seg, inbox)  
       begin
@@ -196,28 +195,30 @@ class Traim
     end
 
     def action(name)
-      return @resource.actions[name] if @resource.actions[name]
+      raise NotImplementedError unless action = @resource.actions[name] 
 
-      default_actions if @default_actions.nil?
-      block = @default_actions[name]
-      block
+      action[:block] = default_actions[name] if action[:block].nil?
+      action
     end
 
     def default_actions
-      @default_actions = {} 
-      delegator = @resource.model_delegator
-      @default_actions["POST"] = lambda do |params|
-        delegator.create(params["payload"])
-      end
-      @default_actions["GET"] = lambda do |params|
-        delegator.show(params["id"])
-      end
-      @default_actions["PUT"] = lambda do |params|
-        result = delegator.update(params["id"], params["payload"])
-        result
-      end
-      @default_actions["DELETE"] = lambda do |params|
-        delegator.delete(@id)
+      @default_actions ||= begin 
+        actions = {}
+        delegator = @resource.model_delegator
+        actions["POST"] = lambda do |params|
+          delegator.create(params["payload"])
+        end
+        actions["GET"] = lambda do |params|
+          delegator.show(params["id"])
+        end
+        actions["PUT"] = lambda do |params|
+          result = delegator.update(params["id"], params["payload"])
+          result
+        end
+        actions["DELETE"] = lambda do |params|
+          delegator.delete(@id)
+        end
+        actions
       end
     end
 
@@ -225,15 +226,23 @@ class Traim
     def record; @record; end
 
     def render(request)
-      raise NotImplementedError unless method_block = action(request.request_method)
-      params = {"payload" => request.params}
+      method_block = action(request.request_method)
+      payload = request.params
+      if (method_block[:options][:permit])
+        if not_permmited_payload = payload.detect { |key, value| !method_block[:options][:permit].include?(key) }  
+          raise BadRequestError.new(message: "Not permitted payload: #{not_permmited_payload}") 
+        end
+      end
+      params = {"payload" => payload}
       params["id"] = @id unless @id.nil?
-      @result = @resource.execute(params, &method_block)
+      @result = @resource.execute(params, &method_block[:block])
       [status, '', [to_json]]
     end
   end
 
   class Resource 
+    ACTION_METHODS = {create: 'POST', show: 'GET', update: 'PUT', destory: 'DELETE'}
+
     def initialize(block) 
       instance_eval(&block) 
     end
@@ -252,10 +261,8 @@ class Traim
     end
 
     def actions; @actions ||= {} end
-    def action(name, &block)
-      action_methods = {create: 'POST', show: 'GET', update: 'PUT', destory: 'DELETE'}
-      actions[action_methods[name]] = block unless block_given?
-      actions[action_methods[name]]
+    def action(name, options = {}, &block)
+      actions[ACTION_METHODS[name]] = {block: block, options: options}
     end
 
     def logger; Traim.logger  end 
