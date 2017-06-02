@@ -73,6 +73,10 @@ class Traim
       app = @applications[name] ||= Application.new(name)
     end
 
+    def helpers(&block)
+      @helpers_block = block
+    end
+
     def route(request, seg = nil)
       inbox = {}
       seg ||= Seg.new(request.path_info) 
@@ -83,6 +87,7 @@ class Traim
         app.route(request, seg)
       else 
         router = Router.new(@resources)
+        router.instance_eval(&@helpers_block) unless @helpers_block.nil?
         router.run(seg, inbox)
         router.render(request)
       end
@@ -242,6 +247,7 @@ class Traim
 
   class Resource 
     ACTION_METHODS = {create: 'POST', show: 'GET', update: 'PUT', destory: 'DELETE'}
+
 
     def initialize(block) 
       instance_eval(&block) 
