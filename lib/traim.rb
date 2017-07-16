@@ -166,7 +166,7 @@ class Traim
             @collection_name = segment
             return instance_eval(&collection)
           else
-            @id = segment
+            @id = segment.to_s.to_i
             @record = @resource.model_delegator.show(@id)
             next 
           end
@@ -345,7 +345,7 @@ class Traim
     end
 
     def show(id)
-      @model.find id.to_s.to_i
+      @model.find id
     end
 
     def delete(id)
