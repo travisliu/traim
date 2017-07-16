@@ -28,7 +28,8 @@ class Traim
   end
 
   def self.config(&block)
-    config = YAML.load_file('config/database.yml')[TRAIM_ENV]
+    config_file = YAML.load_file("#{File.expand_path(File.dirname(File.dirname(__FILE__)))}/config/database.yml")
+    config = config_file[TRAIM_ENV]
     ActiveRecord::Base.establish_connection(config)
     yield self 
   end
