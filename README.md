@@ -14,6 +14,10 @@ Here's a simple application:
 ``` ruby
 # cat hello_traim.rb
 
+Traim.config do |app|
+  app.logger = Logger.new(STDOUT)
+end
+
 class User < ActiveRecord::Base
 end
 
