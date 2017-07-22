@@ -10,6 +10,11 @@ class Traim
   TRAIM_ENV = ENV['TRAIM_ENV'] || 'development'
 
   def initialize(&block)
+    if self.class.logger == nil
+      self.class.logger = Logger.new(STDOUT)
+      self.class.logger.level = Logger::INFO
+    end
+
     @app = Application.new
     @app.compile(&block)
   end
@@ -29,8 +34,7 @@ class Traim
 
   def self.config(&block)
     config_file = YAML.load_file("#{File.expand_path(File.dirname(File.dirname(__FILE__)))}/config/database.yml")
-    config = config_file[TRAIM_ENV]
-    ActiveRecord::Base.establish_connection(config)
+    ActiveRecord::Base.establish_connection(config_file[TRAIM_ENV])
     yield self 
   end
 
