@@ -348,11 +348,32 @@ test "helpers functionality" do |user|
   _, _, response = mock_request(app, "/users/#{user.id}/blurred?name=ivan", "PUT")
   assert User.find(user.id).name == "ivan"
 
-  _, headers, response = mock_request(app, "/users/#{user.id}/blurred", "DELETE")
-  puts "headers: #{headers}"
+  _, _, response = mock_request(app, "/users/#{user.id}/blurred", "DELETE")
   assert !User.exists?(user.id)
 
 end
+
+test "headers functionality" do |user|
+  app = Traim.application do 
+    resources :users do
+      model User
+
+      attribute :id
+      attribute :name
+
+      member :headers do 
+        show do |params|
+          headers("test", "yeah")
+          record 
+        end
+      end 
+    end
+  end
+ 
+  _, headers, response = mock_request(app, "/users/#{user.id}/headers", "GET")
+  assert headers["test"] == "yeah"
+end
+
 
 Book.delete_all
 User.delete_all

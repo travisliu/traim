@@ -140,9 +140,14 @@ class Traim
     def created;   @status = 201 end
     def no_cotent; @status = 204 end
 
+    def headers(key, value)
+      @headers[key] = value 
+    end
+
     def initialize(resources) 
-      @status = nil
+      @status    = nil
       @resources = resources
+      @headers   = {}
     end
 
     def self.resources; @resources ||= {} end
@@ -246,7 +251,8 @@ class Traim
       params = {"payload" => payload}
       params["id"] = @id unless @id.nil?
       @result = @resource.execute(params, &method_block[:block])
-      [status, '', [to_json]]
+
+      [status, @headers, [to_json]]
     end
   end
 
