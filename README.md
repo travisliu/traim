@@ -1,6 +1,6 @@
 # Traim
 
-Traim is a microframework for Building a RESTful API service from your existing ActiveRecord models.
+Traim is a microframework for building a RESTful API service from your existing Active Record models.
 
 ## Getting started
 
@@ -44,7 +44,7 @@ Train.application do
   end
 end
 ```
-put your activerecord config in
+Put your Active Record configuration in
 ` config/database.yml `
 
 To run it, you can create a config.ru file
@@ -57,10 +57,10 @@ run Traim
 
 Then run `rackup`.
 
-Now, you already get basic CURD RESTful API from the user ActiveRecord model.
+Now, you already get a basic CRUD RESTful API from the User ActiveRecord model.
 
 ## Customizable action
-By default, `action` can be easily used to create an endpoint for CRUD operations. you can write your own endpoint as well.
+By default, `action` can be easily used to create an endpoint for CRUD operations. You can write your own endpoint as well.
 ``` ruby
 Traim.application do
   resources :users do
@@ -84,7 +84,7 @@ Response
 ```
 
 ## Associations
-create nestea json reponse with activerecord association
+Create a nested JSON reponse with an Active Record association
 ``` ruby
 class User < ActiveRecord::Base
   has_many :books
