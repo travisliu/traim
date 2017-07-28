@@ -6,7 +6,7 @@ Traim is a microframework for building a RESTful API service from your existing 
 
 ### Installation
 ``` ruby
-gem install train
+gem install traim
 ```
 
 ### Usage
@@ -21,7 +21,7 @@ end
 class User < ActiveRecord::Base
 end
 
-Train.application do
+Traim.application do
   resource :users do
     # Inject user model
     model User
