@@ -40,7 +40,7 @@ Traim.application do
     action :update
 
     # DELETE /users/:id
-    action :destory
+    action :destroy
   end
 end
 ```
