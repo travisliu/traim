@@ -315,6 +315,8 @@ class Traim
     end
 
     def to_hash(object, resources, nest_associations = []) 
+      return if object.nil?
+
       fields.inject({}) do | hash, attr|
         name = attr[:name]
         hash[name] = if attr[:type] == 'attribute'
