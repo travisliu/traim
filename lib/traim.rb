@@ -314,7 +314,7 @@ class Traim
       fields << {name: name, type: 'connection'}
     end
 
-    def to_hash(object, resources, nest_associations = []) 
+    def to_hash(object, resources, nested_associations = []) 
       return if object.nil?
 
       fields.inject({}) do | hash, attr|
@@ -326,18 +326,18 @@ class Traim
             execute(object, &attr[:block])
           end
         elsif  attr[:type] == 'association'
-          raise Error if nest_associations.include?(name)
+          raise Error if nested_associations.include?(name)
           raise Error if object.class.reflections[name.to_s].blank?
-          nest_associations << name
+          nested_associations << name
           object.send(name).map do |association|
-            resources[name].to_hash(association, nest_associations) 
+            resources[name].to_hash(association, resources, nested_associations.dup) 
           end
         else
           resource_name = name.to_s.pluralize.to_sym
-          raise Error.new(message: "Inifinite Association") if nest_associations.include?(resource_name)
+          raise Error.new(message: "Inifinite Association") if nested_associations.include?(resource_name)
           raise Error if object.class.reflections[name.to_s].blank?
-          nest_associations << resource_name 
-          resources[resource_name].to_hash(object.send(name), nest_associations)
+          nested_associations << resource_name 
+          resources[resource_name].to_hash(object.send(name), resources, nested_associations.dup)
         end
         hash
       end
