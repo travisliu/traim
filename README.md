@@ -232,7 +232,7 @@ Traim.application do
 end
 ```
 
-## Visual attributes
+## Virtual attributes
 Built-in attribute is generate response fields from model. Visual can help you present fields outside of model attributes. 
 ``` ruby
 Traim.application do
