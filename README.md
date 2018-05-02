@@ -118,7 +118,7 @@ Response
 ``` json
 {
   "id": 1,
-  "name": "travis"
+  "name": "travis",
   "books": [
     {"isbn": "978-1-61-729109-8"},
     {"isbn": "561-6-28-209847-7"},
