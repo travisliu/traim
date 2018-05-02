@@ -327,7 +327,6 @@ class Traim
           end
         elsif  attr[:type] == 'association'
           raise Error if nested_associations.include?(name)
-          raise Error if object.class.reflections[name.to_s].blank?
           nested_associations << name
           object.send(name).map do |association|
             resources[name].to_hash(association, resources, nested_associations.dup) 
