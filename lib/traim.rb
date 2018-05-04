@@ -91,10 +91,10 @@ class Traim
       if app = @applications[segment]
         app.route(request, seg)
       else 
-        router = Router.new(@resources)
+        router = Router.new(@resources, request)
         router.instance_eval(&@helpers_block) unless @helpers_block.nil?
         router.run(seg, inbox)
-        router.render(request)
+        router.render
       end
     end
 
@@ -134,6 +134,7 @@ class Traim
 
     def status; @status || ok end
     def logger; Traim.logger  end 
+    def request; @request     end
 
     # status code sytax suger
     def ok;        @status = 200 end
@@ -144,10 +145,11 @@ class Traim
       @headers[key] = value 
     end
 
-    def initialize(resources) 
+    def initialize(resources, request) 
       @status    = nil
       @resources = resources
       @headers   = {}
+      @request   = request
     end
 
     def self.resources; @resources ||= {} end
@@ -240,7 +242,7 @@ class Traim
     def model;  @resource.model end
     def record; @record; end
 
-    def render(request)
+    def render
       method_block = action(request.request_method)
       payload = request.params
       if (method_block[:options][:permit])
