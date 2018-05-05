@@ -176,9 +176,8 @@ class Traim
           next
         end 
 
-        if @id.nil? && !defined?(@collection_name)
+        if @id.nil?
           if collection = @resource.collections[segment]
-            @collection_name = segment
             return instance_eval(&collection)
           else
             @id = segment.to_s.to_i
@@ -187,11 +186,9 @@ class Traim
           end
         end
 
-        if !defined?(@member_name)
-          if member = @resource.members[segment]
-            @member_name = segment
-            return instance_eval(&member)
-          end
+        if member = @resource.members[segment]
+          member_name = segment
+          return instance_eval(&member)
         end
 
         raise BadRequestError 
