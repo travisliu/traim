@@ -125,6 +125,10 @@ class Traim
     def error_message; "Bad Request Error" end
     def status; 400 end
   end
+  class ForbiddenError < Error
+    def error_message; "Forbidden Error" end
+    def status; 403 end
+  end
   class NotFoundError < Error
     def error_message; "Not Found Error" end
     def status; 404 end
