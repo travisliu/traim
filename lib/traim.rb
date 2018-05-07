@@ -78,6 +78,11 @@ class Traim
       app = @applications[name] ||= Application.new(name)
     end
 
+    def show(&block);    @resource.action(:show,  &block) end
+    def create(&block);  @resource.action(:create,  &block) end
+    def update(&block);  @resource.action(:update,  &block) end
+    def destory(&block); @resource.action(:destory, &block) end
+
     def helpers(&block)
       @helpers_block = block
     end
@@ -91,11 +96,100 @@ class Traim
       if app = @applications[segment]
         app.route(request, seg)
       else 
-        router = Router.new(@resources, request)
-        router.instance_eval(&@helpers_block) unless @helpers_block.nil?
-        router.run(seg, inbox)
-        router.render
+        model = run(seg, inbox, request)
+        render(request, model)
       end
+    end
+
+    def run(seg, inbox, request) 
+      model = nil 
+      begin
+        segment = inbox[:segment].to_sym
+
+        if model.nil?
+          raise BadRequestError unless @resource = @resources[segment]
+          model = Model.new(@resource.model, request) 
+          next
+        end 
+
+        if model.id.nil?
+          if collection = @resource.collections[segment]
+            instance_eval(&collection)
+            break
+          else
+            model.id = segment.to_s.to_i
+            next 
+          end
+        end
+
+        if member = @resource.members[segment]
+          instance_eval(&member)
+          break
+        end
+
+        raise BadRequestError 
+      end while seg.capture(:segment, inbox) 
+
+      model.instance_eval(&@helpers_block)  unless @helpers_block.nil?
+      model
+    end
+    
+    def action(name)
+      raise NotImplementedError unless action = @resource.actions[name] 
+
+      action[:block] = default_actions[name] if action[:block].nil?
+      action
+    end
+
+    def default_actions
+      @default_actions ||= begin 
+        actions = {}
+        actions["POST"] = lambda do 
+          create(params)
+        end
+        actions["GET"] = lambda do 
+          show(id)
+        end
+        actions["PUT"] = lambda do 
+          result = update(id, params)
+          result
+        end
+        actions["DELETE"] = lambda do 
+          delete(id)
+        end
+        actions
+      end
+    end
+
+    def to_json(resources, model)
+      if @result.kind_of?(ActiveRecord::Relation)
+        hash = @result.map do |object|
+          @resource.to_hash(object, resources, model) 
+        end
+        JSON.dump(hash)
+      else
+        new_hash = {}
+        if @result.errors.size == 0
+          new_hash = @resource.to_hash(@result, resources, model)
+        else
+          new_hash = @result.errors.messages
+        end
+        JSON.dump(new_hash)
+      end
+    end
+
+    def render(request, model)
+      method_block = action(request.request_method)
+
+      if (method_block[:options][:permit])
+        if not_permmited_payload = request.params.detect { |key, value| !method_block[:options][:permit].include?(key) }  
+          raise BadRequestError.new(message: "Not permitted payload: #{not_permmited_payload}") 
+        end
+      end
+
+      model.params = request.params 
+      @result = model.instance_eval(&method_block[:block])
+      [model.status, model.headers, [to_json(@resources, model)]]
     end
 
     def compile(&block)
@@ -105,7 +199,6 @@ class Traim
   end
 
   class Error < StandardError
-
     def initialize(options = {})
       @message = options[:message] || error_message 
       @body    = options[:body]    || error_message
@@ -133,131 +226,6 @@ class Traim
     def error_message; "Not Found Error" end
     def status; 404 end
   end
-   
-  class Router
-
-    def status; @status || ok end
-    def logger; Traim.logger  end 
-    def request; @request     end
-
-    # status code sytax suger
-    def ok;        @status = 200 end
-    def created;   @status = 201 end
-    def no_cotent; @status = 204 end
-
-    def headers(key, value)
-      @headers[key] = value 
-    end
-
-    def initialize(resources, request) 
-      @status    = nil
-      @resources = resources
-      @headers   = {}
-      @request   = request
-    end
-
-    def self.resources; @resources ||= {} end
-
-    def resources(name)
-      @resources[name]
-    end
-
-    def show(&block);    @resource.action(:show,    &block) end
-    def create(&block);  @resource.action(:create,  &block) end
-    def update(&block);  @resource.action(:update,  &block) end
-    def destory(&block); @resource.action(:destory, &block) end
-
-    def run(seg, inbox)  
-      begin
-        segment = inbox[:segment].to_sym
-
-        if @resource.nil?
-          raise BadRequestError unless @resource = resources(segment)
-          next
-        end 
-
-        if @id.nil?
-          if collection = @resource.collections[segment]
-            return instance_eval(&collection)
-          else
-            @id = segment.to_s.to_i
-            @record = @resource.model_delegator.show(@id)
-            next 
-          end
-        end
-
-        if member = @resource.members[segment]
-          member_name = segment
-          return instance_eval(&member)
-        end
-
-        raise BadRequestError 
-      end while seg.capture(:segment, inbox) 
-    end
-    
-    def to_json
-      if @result.kind_of?(ActiveRecord::Relation)
-        hash = @result.map do |object|
-          @resource.to_hash(object, @resources) 
-        end
-        JSON.dump(hash)
-      else
-        new_hash = {}
-        if @result.errors.size == 0
-          new_hash = @resource.to_hash(@result, @resources)
-        else
-          new_hash = @result.errors.messages
-        end
-        JSON.dump(new_hash)
-      end
-    end
-
-    def action(name)
-      raise NotImplementedError unless action = @resource.actions[name] 
-
-      action[:block] = default_actions[name] if action[:block].nil?
-      action
-    end
-
-    def default_actions
-      @default_actions ||= begin 
-        actions = {}
-        delegator = @resource.model_delegator
-        actions["POST"] = lambda do |params|
-          delegator.create(params["payload"])
-        end
-        actions["GET"] = lambda do |params|
-          delegator.show(params["id"])
-        end
-        actions["PUT"] = lambda do |params|
-          result = delegator.update(params["id"], params["payload"])
-          result
-        end
-        actions["DELETE"] = lambda do |params|
-          delegator.delete(@id)
-        end
-        actions
-      end
-    end
-
-    def model;  @resource.model end
-    def record; @record; end
-
-    def render
-      method_block = action(request.request_method)
-      payload = request.params
-      if (method_block[:options][:permit])
-        if not_permmited_payload = payload.detect { |key, value| !method_block[:options][:permit].include?(key) }  
-          raise BadRequestError.new(message: "Not permitted payload: #{not_permmited_payload}") 
-        end
-      end
-      params = {"payload" => payload}
-      params["id"] = @id unless @id.nil?
-      @result = @resource.execute(params, &method_block[:block])
-
-      [status, @headers, [to_json]]
-    end
-  end
 
   class Resource 
     ACTION_METHODS = {create: 'POST', show: 'GET', update: 'PUT', destory: 'DELETE'}
@@ -267,17 +235,9 @@ class Traim
       instance_eval(&block) 
     end
 
-    def execute(params, &block)
-      yield params
-    end
-
     def model(object = nil, options = {})
       @model = object unless object.nil? 
       @model
-    end
-
-    def model_delegator
-      @model_delegator ||= Model.new(model)
     end
 
     def actions; @actions ||= {} end
@@ -317,7 +277,7 @@ class Traim
       fields << {name: name, type: 'connection'}
     end
 
-    def to_hash(object, resources, nested_associations = []) 
+    def to_hash(object, resources, model, nested_associations = []) 
       return if object.nil?
 
       fields.inject({}) do | hash, attr|
@@ -326,20 +286,20 @@ class Traim
           if attr[:block].nil?
             object.attributes[name.to_s]
           else
-            execute(object, &attr[:block])
+            model.instance_exec(object, &attr[:block])
           end
         elsif  attr[:type] == 'association'
           raise Error if nested_associations.include?(name)
           nested_associations << name
           object.send(name).map do |association|
-            resources[name].to_hash(association, resources, nested_associations.dup) 
+            resources[name].to_hash(association, resources, model, nested_associations.dup) 
           end
         else
           resource_name = name.to_s.pluralize.to_sym
           raise Error.new(message: "Inifinite Association") if nested_associations.include?(resource_name)
           raise Error if object.class.reflections[name.to_s].blank?
           nested_associations << resource_name 
-          resources[resource_name].to_hash(object.send(name), resources, nested_associations.dup)
+          resources[resource_name].to_hash(object.send(name), resources, model, nested_associations.dup)
         end
         hash
       end
@@ -348,9 +308,38 @@ class Traim
 
   class Model
 
-    def initialize(model)
-      @model = model 
+    def initialize(model, request = nil)
+      @model   = model 
+      @request = request
+      @headers = {}
+      ok
     end
+
+    attr_accessor :id
+    attr_accessor :model
+    attr_accessor :record
+    attr_accessor :params
+    attr_accessor :request
+    attr_accessor :status
+
+    def logger; Traim.logger  end 
+
+    # status code sytax suger
+    def ok;        @status = 200 end
+    def created;   @status = 201 end
+    def no_cotent; @status = 204 end
+
+    def instance_record(id)
+      @id     = id
+      @record = show(@id)
+    end
+
+    def headers(key = nil, value = nil)
+      return @headers if key.nil?
+      @headers[key] = value 
+    end
+
+    def record; @record ||= show(id) end
 
     def create(params)
       resource = @model.new(params)

@@ -69,8 +69,8 @@ Traim.application do
     attribute :id
     attribute :name
 
-    action :show do |params|
-      user = model.find_by_email params["payload"]["email"]
+    action :show do
+      user = model.find_by_email params["email"]
       user.name = "[admin] #{user.name}"
       user
     end
@@ -140,7 +140,7 @@ Traim.application do
     member :blurred do
 
       # GET /users/1/blurred
-      show do |params|
+      show do
         record.name[1..2] = 'xx'
         record
       end
@@ -162,13 +162,13 @@ Traim.application do
     collection :admin do
 
       # GET /users/admin
-      show do |params|
+      show do
         model.all
       end
 
       # POST /users/admin
-      create do |params|
-        model.create(params["payload"])
+      create do
+        model.create(params)
       end
     end
   end
@@ -223,10 +223,9 @@ Traim.application do
     attribute :id
     attribute :name
 
-    action :show do |params|
+    action :show do
       auth(params["id"])
-      model.find params["id"]
-      user
+      record
     end
   end
 end

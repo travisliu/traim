@@ -3,7 +3,7 @@ require_relative "../lib/traim"
 
 Traim.config do |app| 
   app.logger = Logger.new(STDOUT)
-  app.logger.level = Logger::DEBUG
+  app.logger.level = Logger::INFO
 end
 
 class User < ActiveRecord::Base 
@@ -73,10 +73,9 @@ test "customize functionality" do |user|
       attribute :id
       attribute :name
 
-      action :show do |params|
-        user = model.find params["id"]
-        user.name = "[admin] #{user.name}"
-        user
+      action :show do 
+        record.name = "[admin] #{record.name}"
+        record 
       end
     end
   end
@@ -95,19 +94,20 @@ test "member create, read, update and destory functionality" do |user|
       attribute :name
 
       member :blurred do 
-        show do |params|
+        show do 
           logger.info("show blurred")
+          logger.info("class #{self.class.name}")
           record.name[1..2] = "xx" 
           record 
         end
 
-        update do |params|
-          record.assign_attributes(params["payload"])
+        update do 
+          record.assign_attributes(params)
           record.save
           record 
         end
 
-       destory do |params|
+       destory do 
           record.delete
         end
       end 
@@ -138,12 +138,12 @@ test "collection create, read, update and destory functionality" do |user|
       attribute :name
 
       collection :admin do
-        show do |params|
+        show do 
           model.all
         end
 
-        create do |params|
-          model.create(params["payload"])
+        create do 
+          model.create(params)
         end
       end
     end
@@ -193,13 +193,13 @@ test "has many functionality" do |user|
       action :show
 
       collection :admin do
-        show do |params|
+        show do 
           model.all
         end
 
-        create do |params|
+        create do 
           # what to response?   
-          model.create(params["payload"])
+          model.create(params)
         end
       end
     end
@@ -322,19 +322,19 @@ test "helpers functionality" do |user|
       attribute :name
 
       member :blurred do 
-        show do |params|
+        show do
           auth('test')
           record.name[1..2] = "xx" 
           record 
         end
 
-        update do |params|
-          record.assign_attributes(params["payload"])
+        update do
+          record.assign_attributes(params)
           record.save
           record 
         end
 
-       destory do |params|
+       destory do
           record.delete
         end
       end 
@@ -362,7 +362,7 @@ test "headers functionality" do |user|
       attribute :name
 
       member :headers do 
-        show do |params|
+        show do 
           headers("test", "yeah")
           record 
         end
