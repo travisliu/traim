@@ -218,6 +218,10 @@ class Traim
     def error_message; "Bad Request Error" end
     def status; 400 end
   end
+  class UnauthorizedError < Error
+    def error_message; "Unauthorized Error" end
+    def status; 401 end
+  end
   class ForbiddenError < Error
     def error_message; "Forbidden Error" end
     def status; 403 end
@@ -225,6 +229,14 @@ class Traim
   class NotFoundError < Error
     def error_message; "Not Found Error" end
     def status; 404 end
+  end
+  class MethodNotAllowedError < Error
+    def error_message; "Method Not Allowed" end
+    def status; 405 end
+  end
+  class NotAcceptableError < Error
+    def error_message; "Not Acceptable" end
+    def status; 406 end
   end
 
   class Resource 
