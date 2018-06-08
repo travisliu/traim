@@ -162,7 +162,7 @@ class Traim
     end
 
     def to_json(resources, model)
-      if @result.kind_of?(ActiveRecord::Relation)
+      if @result.is_collection?
         hash = @result.map do |object|
           @resource.to_hash(object, resources, model) 
         end
@@ -188,7 +188,8 @@ class Traim
       end
 
       model.params = request.params 
-      @result = model.instance_eval(&method_block[:block])
+      model.execute(method_block[:block])
+      @result = model
       [model.status, model.headers, [to_json(@resources, model)]]
     end
 
@@ -292,7 +293,9 @@ class Traim
     def to_hash(object, resources, model, nested_associations = []) 
       return if object.nil?
 
-      fields.inject({}) do | hash, attr|
+      hash_fields = fields
+      hash_fields += object.fields if object.respond_to? :fields
+      hash_fields.inject({}) do | hash, attr|
         name = attr[:name]
         hash[name] = if attr[:type] == 'attribute'
           if attr[:block].nil?
@@ -309,7 +312,6 @@ class Traim
         else
           resource_name = name.to_s.pluralize.to_sym
           raise Error.new(message: "Inifinite Association") if nested_associations.include?(resource_name)
-          raise Error if object.class.reflections[name.to_s].blank?
           nested_associations << resource_name 
           resources[resource_name].to_hash(object.send(name), resources, model, nested_associations.dup)
         end
@@ -341,6 +343,17 @@ class Traim
     def created;   @status = 201 end
     def no_cotent; @status = 204 end
 
+    def fields; @fields ||= [] end
+    def attribute(name, &block)
+      fields << {name: name, type: 'attribute', block: block} 
+    end
+    def has_many(name)
+      fields << {name: name, type: 'association'}
+    end
+    def has_one(name)
+      fields << {name: name, type: 'connection'}
+    end
+
     def instance_record(id)
       @id     = id
       @record = show(@id)
@@ -367,11 +380,21 @@ class Traim
       show(id).delete
     end
 
+    def method_missing(m, *args, &block)
+      @instance.send(m, *args, &block)
+    end
+
     def update(id, params)
       resource = show(id)
       resource.assign_attributes(params)
       resource.save
       resource 
+    end
+
+    def is_collection?; @instance.kind_of?(ActiveRecord::Relation) end
+
+    def execute(block)
+      @instance = instance_eval(&block) 
     end
   end
 end

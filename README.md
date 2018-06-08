@@ -67,13 +67,18 @@ Traim.application do
     model User
 
     attribute :id
-    attribute :name
 
     action :show do
+
+      # attribute for single action
+      attribute :name
+
       user = model.find_by_email params["email"]
       user.name = "[admin] #{user.name}"
       user
     end
+
+    action :create
   end
 end
 ```

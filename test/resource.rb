@@ -269,7 +269,7 @@ test "namespace functionality" do |user|
   assert result["user"]["name"] == user.name
 end
 
-test "visual attributes functionality" do |user|
+test "virtual attributes functionality" do |user|
   app = Traim.application do 
     resources :users do
       model User
@@ -288,6 +288,47 @@ test "visual attributes functionality" do |user|
   _, _, response = mock_request(app, "/users/#{user.id}", "GET")
   result = JSON.parse(response.first) 
   assert result["name"] == "kolo"
+end
+
+test "attributes in action" do |user|
+  book = Book.create(user: user, isbn: 'abc')
+  app = Traim.application do 
+    resources :users do
+      model User
+
+      attribute :id
+
+      action :show do 
+        attribute :name
+        record
+      end
+
+      member :books do
+        show do
+          has_many :books
+
+          record
+        end
+      end
+    end
+
+    resources :books do
+      model Book 
+      attribute :isbn
+
+      has_one :user
+
+      action :show
+    end
+  end
+  
+  _, _, response = mock_request(app, "/users/#{user.id}", "GET")
+  result = JSON.parse(response.first) 
+  assert result["name"] == "kolo"
+
+  _, _, response = mock_request(app, "/users/#{user.id}/books", "GET")
+  result = JSON.parse(response.first) 
+  assert result["books"].first["isbn"] == book.isbn
 end
 
 test "strong parameters  functionality" do |user|
