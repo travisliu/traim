@@ -96,28 +96,28 @@ class Traim
       if app = @applications[segment]
         app.route(request, seg)
       else 
-        model = run(seg, inbox, request)
-        render(request, model)
+        controller = run(seg, inbox, request)
+        render(request, controller)
       end
     end
 
     def run(seg, inbox, request) 
-      model = nil 
+      controller = nil 
       begin
         segment = inbox[:segment].to_sym
 
-        if model.nil?
+        if controller.nil?
           raise BadRequestError unless @resource = @resources[segment]
-          model = Model.new(@resource.model, request) 
+          controller = @resource.build_controller(request)
           next
         end 
 
-        if model.id.nil?
+        if controller.id.nil?
           if collection = @resource.collections[segment]
             instance_eval(&collection)
             break
           else
-            model.id = segment.to_s.to_i
+            controller.id = segment.to_s.to_i
             next 
           end
         end
@@ -130,8 +130,8 @@ class Traim
         raise BadRequestError 
       end while seg.capture(:segment, inbox) 
 
-      model.instance_eval(&@helpers_block)  unless @helpers_block.nil?
-      model
+      controller.instance_eval(&@helpers_block)  unless @helpers_block.nil?
+      controller 
     end
     
     def action(name)
@@ -161,16 +161,16 @@ class Traim
       end
     end
 
-    def to_json(resources, model)
+    def to_json(resources, controller)
       if @result.is_collection?
         hash = @result.map do |object|
-          @resource.to_hash(object, resources, model) 
+          @resource.to_hash(object, resources, controller) 
         end
         JSON.dump(hash)
       else
         new_hash = {}
         if @result.errors.size == 0
-          new_hash = @resource.to_hash(@result, resources, model)
+          new_hash = @resource.to_hash(@result, resources, controller)
         else
           new_hash = @result.errors.messages
         end
@@ -178,7 +178,7 @@ class Traim
       end
     end
 
-    def render(request, model)
+    def render(request, controller)
       method_block = action(request.request_method)
 
       if (method_block[:options][:permit])
@@ -187,10 +187,10 @@ class Traim
         end
       end
 
-      model.params = request.params 
-      model.execute(method_block[:block])
-      @result = model
-      [model.status, model.headers, [to_json(@resources, model)]]
+      controller.params = request.params 
+      controller.execute(method_block[:block])
+      @result = controller 
+      [controller.status, controller.headers, [to_json(@resources, controller)]]
     end
 
     def compile(&block)
@@ -253,6 +253,11 @@ class Traim
       @model
     end
 
+    def controller(object = nil)
+      @controller = object unless object.nil?
+      @controller || ArController
+    end
+
     def actions; @actions ||= {} end
     def action(name, options = {}, &block)
       actions[ACTION_METHODS[name]] = {block: block, options: options}
@@ -290,7 +295,11 @@ class Traim
       fields << {name: name, type: 'connection'}
     end
 
-    def to_hash(object, resources, model, nested_associations = []) 
+    def build_controller(request)
+      controller.new(model, request)
+    end
+
+    def to_hash(object, resources, controller, nested_associations = []) 
       return if object.nil?
 
       hash_fields = fields
@@ -301,26 +310,26 @@ class Traim
           if attr[:block].nil?
             object.attributes[name.to_s]
           else
-            model.instance_exec(object, &attr[:block])
+            controller.instance_exec(object, &attr[:block])
           end
         elsif  attr[:type] == 'association'
           raise Error if nested_associations.include?(name)
           nested_associations << name
           object.send(name).map do |association|
-            resources[name].to_hash(association, resources, model, nested_associations.dup) 
+            resources[name].to_hash(association, resources, controller, nested_associations.dup) 
           end
         else
           resource_name = name.to_s.pluralize.to_sym
           raise Error.new(message: "Inifinite Association") if nested_associations.include?(resource_name)
           nested_associations << resource_name 
-          resources[resource_name].to_hash(object.send(name), resources, model, nested_associations.dup)
+          resources[resource_name].to_hash(object.send(name), resources, controller, nested_associations.dup)
         end
         hash
       end
     end
   end
 
-  class Model
+  class Controller 
 
     def initialize(model, request = nil)
       @model   = model 
@@ -391,10 +400,15 @@ class Traim
       resource 
     end
 
-    def is_collection?; @instance.kind_of?(ActiveRecord::Relation) end
+    def is_collection?; @instance.is_a?(Enumerable) end
 
     def execute(block)
       @instance = instance_eval(&block) 
     end
   end
+
+  # A controller design for ActiveRecord
+  class ArController < Controller 
+  end 
+
 end
