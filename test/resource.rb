@@ -95,8 +95,6 @@ test "member create, read, update and destory functionality" do |user|
 
       member :blurred do 
         show do 
-          logger.info("show blurred")
-          logger.info("class #{self.class.name}")
           record.name[1..2] = "xx" 
           record 
         end
@@ -199,7 +197,7 @@ test "has many functionality" do |user|
 
         create do 
           # what to response?   
-          model.create(params)
+          model.create_record(params)
         end
       end
     end
