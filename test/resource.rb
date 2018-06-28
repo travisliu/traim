@@ -362,7 +362,7 @@ test "helpers functionality" do |user|
 
       member :blurred do 
         show do
-          auth('test')
+          helper.auth('test')
           record.name[1..2] = "xx" 
           record 
         end

@@ -65,7 +65,7 @@ class Traim
     end
 
     def resources(name, &block)
-      @resources[name] = Resource.new(block) 
+      @resources[name] = Resource.new(block, @helper) 
     end
 
     def namespace(name, &block)
@@ -79,7 +79,7 @@ class Traim
     end
 
     def helpers(&block)
-      @helpers_block = block
+      @helper = Helper.new(block)
     end
 
     def route(request, seg = nil)
@@ -125,7 +125,6 @@ class Traim
         raise BadRequestError 
       end while seg.capture(:segment, inbox) 
 
-      controller.instance_eval(&@helpers_block)  unless @helpers_block.nil?
       controller 
     end
     
@@ -233,8 +232,9 @@ class Traim
     ACTION_METHODS = {create: 'POST', show: 'GET', update: 'PUT', destory: 'DELETE'}
 
 
-    def initialize(block) 
+    def initialize(block, helper) 
       instance_eval(&block) 
+      @helper = helper
     end
 
     def model(object = nil, options = {})
@@ -285,7 +285,7 @@ class Traim
     end
 
     def build_controller(request)
-      controller.new(model, actions.dup, request)
+      controller.new(model, actions.dup, @helper.clone, request)
     end
 
     def to_hash(controller, resources, nested_associations = []) 
@@ -335,18 +335,27 @@ class Traim
 
   class Controller 
 
-    def initialize(model, actions, request = nil)
+    def initialize(model, actions, helper = nil, request = nil)
       @model   = model 
       @request = request
       @headers = {}
       @actions = actions
+
       ok
+
+      unless helper.nil?
+        @helper = helper
+        @helper.request = @request
+        @helper.status  = @status
+        @helper.model   = @model
+      end
     end
 
     attr_accessor :id
     attr_accessor :model
     attr_accessor :params
     attr_accessor :request
+    attr_accessor :helper
     attr_accessor :status
 
     def logger; Traim.logger  end 
@@ -431,4 +440,15 @@ class Traim
   class ArController < Controller 
   end 
 
+  class Helper
+    def initialize(block)
+      instance_eval(&block)
+    end
+    def logger; Traim.logger  end 
+
+    attr_accessor :request
+    attr_accessor :status
+    attr_accessor :model
+
+  end
 end
