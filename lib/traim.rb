@@ -149,17 +149,17 @@ class Traim
     end
 
     def to_json(resources, controller)
-      if @result.is_collection?
-        hash = @result.map_record do |object, controller|
+      if controller.is_collection?
+        hash = controller.map_record do |object, controller|
           @resource.to_hash(controller, resources) 
         end
         JSON.dump(hash)
       else
         new_hash = {}
-        if @result.errors.size == 0
+        if controller.errors.size == 0
           new_hash = @resource.to_hash(controller, resources)
         else
-          new_hash = @result.errors.messages
+          new_hash = controller.errors.messages
         end
         JSON.dump(new_hash)
       end
@@ -177,7 +177,6 @@ class Traim
 
       controller.params = request.params 
       controller.execute(method_block[:block])
-      @result = controller 
       [controller.status, controller.headers, [to_json(@resources, controller)]]
     end
 
@@ -276,12 +275,12 @@ class Traim
       fields << {name: name, type: 'attribute', block: block} 
     end
 
-    def has_many(name, &block)
-      fields << {name: name, type: 'association', block: block}
+    def has_many(name, options={}, &block)
+      fields << {name: name, type: 'association', resource: options[:resource], block: block}
     end
 
-    def has_one(name)
-      fields << {name: name, type: 'connection'}
+    def has_one(name, options={}, &block)
+      fields << {name: name, type: 'connection', resource: options[:resource], block: block}
     end
 
     def build_controller(request)
@@ -307,26 +306,28 @@ class Traim
         elsif  attr[:type] == 'association'
           raise Error if nested_associations.include?(name)
           nested_associations << name
-          resource = resources[name]
+          resource = resources[attr[:resource] || name]
           associated_controller = resource.build_controller(controller.request)
-          association = if attr[:block].nil?
-            associated_controller.record = controller.send(name)
-            associated_controller
+          associated_controller.record = if attr[:block].nil?
+            controller.send(name)
           else
-            associated_controller.execute(attr[:block])
-            associated_controller 
+            controller.dup.execute(attr[:block])
           end
-          association.map_record do |item, controller|
+          associated_controller.map_record do |item, controller|
             resource.to_hash(controller, resources, nested_associations.dup) 
           end
         else
           resource_name = name.to_s.pluralize.to_sym
           raise Error.new(message: "Inifinite Association") if nested_associations.include?(resource_name)
           nested_associations << resource_name 
-          resource = resources[resource_name]
+          resource = resources[attr[:resource] || resource_name]
           connected_controller = resource.build_controller(controller.request)
-          connected_controller.record = controller.send(name) 
-          resources[resource_name].to_hash(connected_controller, resources, nested_associations.dup)
+          connected_controller.record = if attr[:block].nil?
+            controller.send(name) 
+          else
+            controller.dup.execute(attr[:block])
+          end
+          resource.to_hash(connected_controller, resources, nested_associations.dup)
         end
         hash
       end
@@ -376,11 +377,11 @@ class Traim
     def attribute(name, &block)
       fields << {name: name, type: 'attribute', block: block} 
     end
-    def has_many(name, &block)
-      fields << {name: name, type: 'association', block: block}
+    def has_many(name, options={}, &block)
+      fields << {name: name, type: 'association', resource: options[:resource], block: block}
     end
-    def has_one(name)
-      fields << {name: name, type: 'connection'}
+    def has_one(name, options={}, &block)
+      fields << {name: name, type: 'connection', resource: options[:resource], block: block}
     end
 
     def instance_record(id)

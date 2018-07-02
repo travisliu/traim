@@ -10,6 +10,10 @@ class User < ActiveRecord::Base
   validates_presence_of :name
 
   has_many :books
+
+  def limited_books
+    books.limit(2)
+  end
 end
 
 class Book < ActiveRecord::Base 
@@ -411,6 +415,41 @@ test "headers functionality" do |user|
  
   _, headers, response = mock_request(app, "/users/#{user.id}/headers", "GET")
   assert headers["test"] == "yeah"
+end
+
+test "custom resource for association" do |user|
+  Book.create(user: user, isbn: 'isbn_1')
+  Book.create(user: user, isbn: 'isbn_2')
+  Book.create(user: user, isbn: 'isbn_3')
+
+  app = Traim.application do 
+    resources :users do
+      model User
+
+      attribute :id
+
+      action :show
+      
+      has_many :limited_books, resource: :books do
+        record.limited_books
+      end 
+
+      has_one :second_book, resource: :books do
+        record.books.second
+      end
+    end
+
+    resources :books do
+      model Book
+
+      attribute :isbn
+    end
+  end
+
+  _, headers, response = mock_request(app, "/users/#{user.id}", "GET")
+  result = JSON.parse(response.first) 
+  assert result["limited_books"].length == 2 
+  assert result["second_book"]["isbn"] == "isbn_2"
 end
 
 
