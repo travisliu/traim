@@ -452,6 +452,29 @@ test "custom resource for association" do |user|
   assert result["second_book"]["isbn"] == "isbn_2"
 end
 
+test "add attributes in helper" do |user|
+  app = Traim.application do 
+    helpers do
+      def add_user_name 
+        attribute :name
+      end
+    end
+    resources :users do
+      model User
+
+      attribute :id
+
+      action :show do
+        helper.add_user_name
+        record
+      end
+    end
+  end
+ 
+  _, headers, response = mock_request(app, "/users/#{user.id}", "GET")
+  result = JSON.parse(response.first) 
+  assert result["name"] == "kolo"
+end
 
 Book.delete_all
 User.delete_all

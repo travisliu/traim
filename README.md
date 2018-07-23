@@ -220,13 +220,15 @@ Traim.application do
     helpers do
       def auth(user_id) 
         raise BadRequestError.new(message: "unauthenticated request") unless model.exists?(id: user_id)
+
+        # attribute can be added in helpers as well
+        attribute :name
       end
     end
 
     model User
 
     attribute :id
-    attribute :name
 
     action :show do
       auth(params["id"])

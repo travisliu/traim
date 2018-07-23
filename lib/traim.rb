@@ -341,6 +341,7 @@ class Traim
       @request = request
       @headers = {}
       @actions = actions
+      @fields  = []
 
       ok
 
@@ -348,6 +349,7 @@ class Traim
         @helper = helper
         @helper.request = @request
         @helper.status  = @status
+        @helper.fields  = @fields
         @helper.model   = @model
       end
     end
@@ -358,6 +360,7 @@ class Traim
     attr_accessor :request
     attr_accessor :helper
     attr_accessor :status
+    attr_accessor :fields
 
     def logger; Traim.logger  end 
 
@@ -373,7 +376,6 @@ class Traim
     
     def actions(name); @actions[name] end
 
-    def fields; @fields ||= [] end
     def attribute(name, &block)
       fields << {name: name, type: 'attribute', block: block} 
     end
@@ -450,6 +452,17 @@ class Traim
     attr_accessor :request
     attr_accessor :status
     attr_accessor :model
+    attr_accessor :fields
 
+    def fields; @fields ||= [] end
+    def attribute(name, &block)
+      fields << {name: name, type: 'attribute', block: block} 
+    end
+    def has_many(name, options={}, &block)
+      fields << {name: name, type: 'association', resource: options[:resource], block: block}
+    end
+    def has_one(name, options={}, &block)
+      fields << {name: name, type: 'connection', resource: options[:resource], block: block}
+    end
   end
 end
