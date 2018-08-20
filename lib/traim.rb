@@ -430,6 +430,7 @@ class Traim
       @record.map do |item|
         new_controller = self.class.new(@model, @actions)
         new_controller.record = item 
+        new_controller.fields = self.fields
         yield item, new_controller 
       end
     end
