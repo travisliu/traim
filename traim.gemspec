@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name = "traim"
-  s.version = "0.3.1"
+  s.version = "0.3.2"
   s.summary = %{Resource-oriented microframework for RESTful API}
   s.description = %Q{Resource-oriented microframework for RESTful API}
   s.authors = ["Travis Liu"]
